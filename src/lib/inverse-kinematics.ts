@@ -1,4 +1,5 @@
 import { toDegrees } from "@/lib/math-utils";
+import { truncateFloat } from "@/lib/utils";
 
 type InverseKinematicsParams = {
   endEffectorPosition: { x: number; y: number; z: number };
@@ -19,7 +20,7 @@ export const getAnglesFromPosition = ({
   endEffectorToMidJointLength: l,
   midJointToBaseLength: L,
   baseRadius: R,
-}: InverseKinematicsParams): InverseKinematicsResult => {
+}: InverseKinematicsParams): InverseKinematicsResult | null => {
   // Theta 1
   // a1 = C(1) + r - R;
   // a_1 = a1^2 + l^2 + C(2)^2 + C(3)^2 - L^2 + 2*a1*l;
@@ -150,9 +151,13 @@ export const getAnglesFromPosition = ({
     theta3 = theta3_1;
   }
 
+  if (isNaN(theta1) || isNaN(theta2) || isNaN(theta3)) {
+    return null;
+  }
+
   return {
-    theta1: toDegrees(theta1),
-    theta2: toDegrees(theta2),
-    theta3: toDegrees(theta3),
+    theta1: truncateFloat(toDegrees(theta1), 4),
+    theta2: truncateFloat(toDegrees(theta2), 4),
+    theta3: truncateFloat(toDegrees(theta3), 4),
   };
 };
