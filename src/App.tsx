@@ -127,10 +127,12 @@ function App() {
 
   const handleStop = () => {
     signalConverterRef.current.onStop();
+    sendAnglesToESP();
   };
 
   const handleReset = () => {
     setEndEffectorPosition(INITIAL_END_EFFECTOR_POSITION);
+    sendAnglesToESP();
   };
 
   const handleSliderValueChange = (values: number[]) => {
@@ -150,6 +152,18 @@ function App() {
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setApIP(event.target.value);
+  };
+
+  const sendAnglesToESP = () => {
+    if (!angles || !apIP) {
+      return;
+    }
+
+    const url = `http://${apIP}/angles?theta1=${angles.theta1}&theta2=${angles.theta2}&theta3=${angles.theta3}`;
+
+    fetch(url, {
+      method: "GET",
+    });
   };
 
   return (
