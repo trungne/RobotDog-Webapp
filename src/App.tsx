@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Joystick } from "react-joystick-component";
 import { type IJoystickUpdateEvent } from "react-joystick-component/build/lib/Joystick";
@@ -8,6 +8,7 @@ import { Slider } from "@/components/ui/slider";
 import { clamp, truncateFloat } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import useWebSocket, { ReadyState } from "react-use-websocket";
 
 const DEFAULT_ESP_32_IP = "192.168.4.1";
 
@@ -31,6 +32,8 @@ const INITIAL_END_EFFECTOR_POSITION = {
   y: 0.2,
   z: -3,
 } as const;
+
+const ANGLE_SEPARATOR = ",";
 class SignalConverter {
   private joystickState: IJoystickUpdateEvent | null = null;
 
@@ -84,6 +87,20 @@ function App() {
 
   const [apIP, setApIP] = useState<string>(DEFAULT_ESP_32_IP);
 
+  const socketUrl = `ws://${apIP}/ws`;
+
+  const { sendMessage, readyState } = useWebSocket(socketUrl);
+
+  const angles = useMemo(() => {
+    return getAnglesFromPosition({
+      endEffectorPosition: endEffectorPosition,
+      endEffectorRadius: END_EFFECTOR_RADIUS,
+      endEffectorToMidJointLength: END_EFFECTOR_TO_MID_JOINT_LENGTH,
+      midJointToBaseLength: MID_JOINT_TO_BASE_LENGTH,
+      baseRadius: BASE_RADIUS,
+    });
+  }, [endEffectorPosition]);
+
   const signalConverterRef = useRef<SignalConverter>(
     new SignalConverter(100, (joystickState) => {
       setEndEffectorPosition((prev) => {
@@ -110,15 +127,15 @@ function App() {
     })
   );
 
-  const angles = useMemo(() => {
-    return getAnglesFromPosition({
-      endEffectorPosition: endEffectorPosition,
-      endEffectorRadius: END_EFFECTOR_RADIUS,
-      endEffectorToMidJointLength: END_EFFECTOR_TO_MID_JOINT_LENGTH,
-      midJointToBaseLength: MID_JOINT_TO_BASE_LENGTH,
-      baseRadius: BASE_RADIUS,
-    });
-  }, [endEffectorPosition]);
+  useEffect(() => {
+    if (!angles) {
+      return;
+    }
+
+    sendMessage(
+      `${angles.theta1}${ANGLE_SEPARATOR}${angles.theta2}${ANGLE_SEPARATOR}${angles.theta3}`
+    );
+  }, [angles, sendMessage]);
 
   const handleStart = () => {
     signalConverterRef.current.onStart();
@@ -142,8 +159,6 @@ function App() {
     setEndEffectorPosition((prev) => {
       const value = values.at(0);
 
-      console.log(value);
-
       if (!value) {
         return prev;
       }
@@ -160,16 +175,22 @@ function App() {
   };
 
   const sendAnglesToESP = () => {
-    if (!angles || !apIP) {
-      return;
-    }
-
-    const url = `http://${apIP}/angles?theta1=${angles.theta1}&theta2=${angles.theta2}&theta3=${angles.theta3}`;
-
-    fetch(url, {
-      method: "GET",
-    });
+    // if (!angles || !apIP) {
+    //   return;
+    // }
+    // const url = `http://${apIP}/angles?theta1=${angles.theta1}&theta2=${angles.theta2}&theta3=${angles.theta3}`;
+    // fetch(url, {
+    //   method: "GET",
+    // });
   };
+
+  const connectionStatus = {
+    [ReadyState.CONNECTING]: "Connecting",
+    [ReadyState.OPEN]: "Open",
+    [ReadyState.CLOSING]: "Closing",
+    [ReadyState.CLOSED]: "Closed",
+    [ReadyState.UNINSTANTIATED]: "Uninstantiated",
+  }[readyState];
 
   return (
     <main className="flex flex-col justify-center items-center h-full">
@@ -182,6 +203,9 @@ function App() {
             placeholder="Enter ESP IP"
           />
         </div>
+
+        <div>Connection Status: {connectionStatus}</div>
+
         <div className="flex flex-col justify-center items-center gap-4">
           <div className="flex flex-col justify-center items-center gap-4 min-w-60">
             <Label className="text-center">X,Y Positions</Label>

@@ -14,6 +14,7 @@ mv dist/assets/*.css dist/styles.css
 
 rm -rf dist/assets
 
+
 # Create new index.html
 echo "Creating new index.html..."
 cat > dist/index.html <<EOF
@@ -38,3 +39,5 @@ echo "Creating data folder..."
 rm -rf data
 mkdir data
 cp -r dist/* data
+
+rm data/vite.svg
