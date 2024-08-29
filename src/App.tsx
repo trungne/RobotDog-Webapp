@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { clamp, truncateFloat } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+const DEFAULT_ESP_32_IP = "192.168.4.1";
 
 const MAX_END_EFFECTOR_X = 2.7;
 const MIN_END_EFFECTOR_X = -2.3;
@@ -79,7 +82,7 @@ function App() {
     z: number;
   }>(INITIAL_END_EFFECTOR_POSITION);
 
-  const [apIP, setApIP] = useState<string | null>(null);
+  const [apIP, setApIP] = useState<string>(DEFAULT_ESP_32_IP);
 
   const signalConverterRef = useRef<SignalConverter>(
     new SignalConverter(100, (joystickState) => {
@@ -139,6 +142,8 @@ function App() {
     setEndEffectorPosition((prev) => {
       const value = values.at(0);
 
+      console.log(value);
+
       if (!value) {
         return prev;
       }
@@ -168,44 +173,61 @@ function App() {
 
   return (
     <main className="flex flex-col justify-center items-center h-full">
-      <section className="max-w-96 flex flex-col gap-4 justify-center items-center">
+      <section className="max-w-[512px] flex flex-col gap-4 justify-center items-center">
         <div>
           ESP32 AP IP:
           <Input
-            value={apIP ?? undefined}
+            value={apIP}
             onChange={handleInputChange}
             placeholder="Enter ESP IP"
           />
         </div>
-        <div>
+        <div className="flex flex-col justify-center items-center gap-4">
+          <div className="flex flex-col justify-center items-center gap-4 min-w-60">
+            <Label className="text-center">X,Y Positions</Label>
+            <Joystick
+              size={100}
+              sticky={false}
+              baseColor="red"
+              stickColor="blue"
+              move={handleMove}
+              stop={handleStop}
+              start={handleStart}
+            />
+          </div>
+
+          <div className="flex flex-col justify-center items-center gap-4 min-w-60">
+            <Label className="text-center" htmlFor="z-controller">
+              Z Position
+            </Label>
+
+            <Slider
+              id="z-controller"
+              className="w-full"
+              value={[endEffectorPosition.z]}
+              onValueChange={handleSliderValueChange}
+              step={0.01}
+              min={MIN_END_EFFECTOR_Z}
+              max={MAX_END_EFFECTOR_Z}
+            />
+          </div>
+        </div>
+
+        <Button onClick={handleReset}>Reset</Button>
+
+        <div className="flex flex-col gap-2 min-w-60">
           <div>End effector position:</div>
           <div>x: {endEffectorPosition.x}</div>
           <div>y: {endEffectorPosition.y}</div>
           <div>z: {endEffectorPosition.z}</div>
-          <Slider
-            value={[endEffectorPosition.z]}
-            onValueChange={handleSliderValueChange}
-          />
         </div>
 
-        <div>
+        <div className="flex flex-col gap-2 min-w-60">
           <div>Angle:</div>
           <div>Theta 1: {angles?.theta1}</div>
           <div>Theta 2: {angles?.theta2}</div>
           <div>Theta 3: {angles?.theta3}</div>
         </div>
-
-        <Joystick
-          size={100}
-          sticky={false}
-          baseColor="red"
-          stickColor="blue"
-          move={handleMove}
-          stop={handleStop}
-          start={handleStart}
-        />
-
-        <Button onClick={handleReset}>Reset</Button>
       </section>
     </main>
   );
