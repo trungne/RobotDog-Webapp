@@ -1,5 +1,4 @@
 import { toDegrees } from "@/lib/math-utils";
-import { truncateFloat } from "@/lib/utils";
 
 type InverseKinematicsParams = {
   endEffectorPosition: { x: number; y: number; z: number };
@@ -156,8 +155,8 @@ export const getAnglesFromPosition = ({
   }
 
   return {
-    theta1: truncateFloat(toDegrees(theta1), 4),
-    theta2: truncateFloat(toDegrees(theta2), 4),
-    theta3: truncateFloat(toDegrees(theta3), 4),
+    theta1: Math.round(toDegrees(theta1)),
+    theta2: Math.round(toDegrees(theta2)),
+    theta3: Math.round(toDegrees(theta3)),
   };
 };

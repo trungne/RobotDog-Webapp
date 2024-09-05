@@ -5,32 +5,38 @@ import { type IJoystickUpdateEvent } from "react-joystick-component/build/lib/Jo
 import { getAnglesFromPosition } from "@/lib/inverse-kinematics";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { clamp, truncateFloat } from "@/lib/utils";
+import { clamp } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 
 const DEFAULT_ESP_32_IP = "192.168.4.1";
 
-const MAX_END_EFFECTOR_X = 2.7;
-const MIN_END_EFFECTOR_X = -2.3;
-const END_EFFECTOR_X_STEP = 0.01;
+const MAX_END_EFFECTOR_X = 270;
+const MIN_END_EFFECTOR_X = -270;
+const END_EFFECTOR_X_STEP = 10;
 
-const MAX_END_EFFECTOR_Y = 2.7;
-const END_EFFECTOR_Y_STEP = 0.01;
-const MIN_END_EFFECTOR_Y = -2.7;
+const MAX_END_EFFECTOR_Y = 270;
+const MIN_END_EFFECTOR_Y = -270;
+const END_EFFECTOR_Y_STEP = 10;
 
-const MAX_END_EFFECTOR_Z = -1.28;
-const MIN_END_EFFECTOR_Z = -3.4;
+const MAX_END_EFFECTOR_Z = 530;
+const MIN_END_EFFECTOR_Z = 350;
+const END_EFFECTOR_Z_STEP = 10;
 
-const END_EFFECTOR_RADIUS = 1;
-const END_EFFECTOR_TO_MID_JOINT_LENGTH = 1;
-const MID_JOINT_TO_BASE_LENGTH = 3;
-const BASE_RADIUS = 2;
+// l = 100; % Length of the upper arm
+// L = 446; % Length of the lower arm
+// R = 105/2;
+// r = 45;
+
+const END_EFFECTOR_RADIUS = 45; // r
+const END_EFFECTOR_TO_MID_JOINT_LENGTH = 100; // l
+const MID_JOINT_TO_BASE_LENGTH = 446; // L
+const BASE_RADIUS = 105 / 2; // R
 const INITIAL_END_EFFECTOR_POSITION = {
-  x: 1,
-  y: 0.2,
-  z: -3,
+  x: 0,
+  y: 0,
+  z: 432,
 } as const;
 
 const ANGLE_SEPARATOR = ",";
@@ -115,8 +121,8 @@ function App() {
         const deltaX = END_EFFECTOR_X_STEP * joystickState.x;
         const deltaY = END_EFFECTOR_Y_STEP * joystickState.y;
 
-        const newX = truncateFloat(prev.x + deltaX, 4);
-        const newY = truncateFloat(prev.y + deltaY, 4);
+        const newX = Math.round(prev.x + deltaX);
+        const newY = Math.round(prev.y + deltaY);
 
         return {
           ...prev,
@@ -128,14 +134,14 @@ function App() {
   );
 
   useEffect(() => {
-    if (!angles) {
+    if (!angles || !(readyState === ReadyState.OPEN)) {
       return;
     }
 
     sendMessage(
       `${angles.theta1}${ANGLE_SEPARATOR}${angles.theta2}${ANGLE_SEPARATOR}${angles.theta3}`
     );
-  }, [angles, sendMessage]);
+  }, [angles, sendMessage, readyState]);
 
   const handleStart = () => {
     signalConverterRef.current.onStart();
@@ -147,12 +153,10 @@ function App() {
 
   const handleStop = () => {
     signalConverterRef.current.onStop();
-    sendAnglesToESP();
   };
 
   const handleReset = () => {
     setEndEffectorPosition(INITIAL_END_EFFECTOR_POSITION);
-    sendAnglesToESP();
   };
 
   const handleSliderValueChange = (values: number[]) => {
@@ -172,16 +176,6 @@ function App() {
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setApIP(event.target.value);
-  };
-
-  const sendAnglesToESP = () => {
-    // if (!angles || !apIP) {
-    //   return;
-    // }
-    // const url = `http://${apIP}/angles?theta1=${angles.theta1}&theta2=${angles.theta2}&theta3=${angles.theta3}`;
-    // fetch(url, {
-    //   method: "GET",
-    // });
   };
 
   const connectionStatus = {
@@ -230,7 +224,7 @@ function App() {
               className="w-full"
               value={[endEffectorPosition.z]}
               onValueChange={handleSliderValueChange}
-              step={0.01}
+              step={END_EFFECTOR_Z_STEP}
               min={MIN_END_EFFECTOR_Z}
               max={MAX_END_EFFECTOR_Z}
             />
