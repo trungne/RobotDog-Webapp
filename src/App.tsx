@@ -151,12 +151,61 @@ function App() {
     signalConverterRef.current.onMove(event);
   };
 
+  const requestRef = useRef<number | null>(null);
+
+  const approachDefaultPosition = () => {
+    setEndEffectorPosition((prev) => {
+      const deltaX = prev.x > INITIAL_END_EFFECTOR_POSITION.x ? -1 : 1;
+      const deltaY = prev.y > INITIAL_END_EFFECTOR_POSITION.y ? -1 : 1;
+      const deltaZ = prev.z > INITIAL_END_EFFECTOR_POSITION.z ? -1 : 1;
+
+      const newX = clamp(
+        prev.x + deltaX,
+        MIN_END_EFFECTOR_X,
+        MAX_END_EFFECTOR_X
+      );
+
+      const newY = clamp(
+        prev.y + deltaY,
+        MIN_END_EFFECTOR_Y,
+        MAX_END_EFFECTOR_Y
+      );
+
+      const newZ = clamp(
+        prev.z + deltaZ,
+        MIN_END_EFFECTOR_Z,
+        MAX_END_EFFECTOR_Z
+      );
+
+      const hasReachedDefaultX =
+        Math.abs(newX - INITIAL_END_EFFECTOR_POSITION.x) <= 1;
+      const hasReachedDefaultY =
+        Math.abs(newY - INITIAL_END_EFFECTOR_POSITION.y) <= 1;
+      const hasReachedDefaultZ =
+        Math.abs(newZ - INITIAL_END_EFFECTOR_POSITION.z) <= 1;
+
+      if (hasReachedDefaultX && hasReachedDefaultY && hasReachedDefaultZ) {
+        if (requestRef.current) {
+          cancelAnimationFrame(requestRef.current);
+        }
+        return prev;
+      }
+
+      requestRef.current = requestAnimationFrame(approachDefaultPosition);
+      return {
+        x: hasReachedDefaultX ? INITIAL_END_EFFECTOR_POSITION.x : newX,
+        y: hasReachedDefaultY ? INITIAL_END_EFFECTOR_POSITION.y : newY,
+        z: hasReachedDefaultZ ? INITIAL_END_EFFECTOR_POSITION.z : newZ,
+      };
+    });
+  };
+
   const handleStop = () => {
     signalConverterRef.current.onStop();
   };
 
   const handleReset = () => {
-    setEndEffectorPosition(INITIAL_END_EFFECTOR_POSITION);
+    requestRef.current = requestAnimationFrame(approachDefaultPosition);
   };
 
   const handleSliderValueChange = (values: number[]) => {
