@@ -9,6 +9,8 @@ import { clamp } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import useWebSocket, { ReadyState } from "react-use-websocket";
+import { NumberInput } from "@/components/NumberInput";
+import { Separator } from "@/components/ui/separator";
 
 const DEFAULT_ESP_32_IP = "192.168.4.1";
 
@@ -23,11 +25,6 @@ const END_EFFECTOR_Y_STEP = 10;
 const MAX_END_EFFECTOR_Z = 530;
 const MIN_END_EFFECTOR_Z = 350;
 const END_EFFECTOR_Z_STEP = 10;
-
-// l = 100; % Length of the upper arm
-// L = 446; % Length of the lower arm
-// R = 105/2;
-// r = 45;
 
 const END_EFFECTOR_RADIUS = 45; // r
 const END_EFFECTOR_TO_MID_JOINT_LENGTH = 100; // l
@@ -85,6 +82,15 @@ class SignalConverter {
 }
 
 function App() {
+  const [endEffectorRadius, setEndEffectorRadius] =
+    useState<number>(END_EFFECTOR_RADIUS); // r
+  const [endEffectorToMidJointLength, setEndEffectorToMidJointLength] =
+    useState<number>(END_EFFECTOR_TO_MID_JOINT_LENGTH); // l
+  const [midJointToBaseLength, setMidJointToBaseLength] = useState<number>(
+    MID_JOINT_TO_BASE_LENGTH
+  ); // L
+  const [baseRadius, setBaseRadius] = useState<number>(BASE_RADIUS); // R
+
   const [endEffectorPosition, setEndEffectorPosition] = useState<{
     x: number;
     y: number;
@@ -99,13 +105,19 @@ function App() {
 
   const angles = useMemo(() => {
     return getAnglesFromPosition({
-      endEffectorPosition: endEffectorPosition,
-      endEffectorRadius: END_EFFECTOR_RADIUS,
-      endEffectorToMidJointLength: END_EFFECTOR_TO_MID_JOINT_LENGTH,
-      midJointToBaseLength: MID_JOINT_TO_BASE_LENGTH,
-      baseRadius: BASE_RADIUS,
+      endEffectorPosition,
+      endEffectorRadius,
+      endEffectorToMidJointLength,
+      midJointToBaseLength,
+      baseRadius,
     });
-  }, [endEffectorPosition]);
+  }, [
+    endEffectorPosition,
+    endEffectorRadius,
+    endEffectorToMidJointLength,
+    midJointToBaseLength,
+    baseRadius,
+  ]);
 
   const signalConverterRef = useRef<SignalConverter>(
     new SignalConverter(100, (joystickState) => {
@@ -238,15 +250,6 @@ function App() {
   return (
     <main className="flex flex-col justify-center items-center h-full">
       <section className="max-w-[512px] flex flex-col gap-4 justify-center items-center">
-        <div>
-          ESP32 AP IP:
-          <Input
-            value={apIP}
-            onChange={handleInputChange}
-            placeholder="Enter ESP IP"
-          />
-        </div>
-
         <div>Connection Status: {connectionStatus}</div>
 
         <div className="flex flex-col justify-center items-center gap-4">
@@ -264,9 +267,7 @@ function App() {
           </div>
 
           <div className="flex flex-col justify-center items-center gap-4 min-w-60">
-            <Label className="text-center" htmlFor="z-controller">
-              Z Position
-            </Label>
+            <Label className="text-center">Z Position</Label>
 
             <Slider
               id="z-controller"
@@ -282,6 +283,8 @@ function App() {
 
         <Button onClick={handleReset}>Reset</Button>
 
+        <Separator />
+
         <div className="flex flex-col gap-2 min-w-60">
           <div>End effector position:</div>
           <div>x: {endEffectorPosition.x}</div>
@@ -294,6 +297,49 @@ function App() {
           <div>Theta 1: {angles?.theta1}</div>
           <div>Theta 2: {angles?.theta2}</div>
           <div>Theta 3: {angles?.theta3}</div>
+        </div>
+
+        <Separator />
+
+        <div className="flex flex-col gap-2">
+          <NumberInput
+            id="end-effector-radius"
+            label="End effector radius (r)"
+            value={endEffectorRadius}
+            onChange={setEndEffectorRadius}
+          />
+
+          <NumberInput
+            id="base-radius"
+            label="Base radius (R)"
+            value={baseRadius}
+            onChange={setBaseRadius}
+          />
+
+          <NumberInput
+            id="end-effector-to-mid-joint-length"
+            label="End effector to mid joint length (l)"
+            value={endEffectorToMidJointLength}
+            onChange={setEndEffectorToMidJointLength}
+          />
+
+          <NumberInput
+            id="mid-joint-to-base-length"
+            label="Mid joint to base length (L)"
+            value={midJointToBaseLength}
+            onChange={setMidJointToBaseLength}
+          />
+        </div>
+
+        <Separator />
+
+        <div>
+          ESP32 AP IP:
+          <Input
+            value={apIP}
+            onChange={handleInputChange}
+            placeholder="Enter ESP IP"
+          />
         </div>
       </section>
     </main>
