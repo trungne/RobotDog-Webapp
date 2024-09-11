@@ -12,6 +12,8 @@ import useWebSocket, { ReadyState } from "react-use-websocket";
 import { NumberInput } from "@/components/NumberInput";
 import { Separator } from "@/components/ui/separator";
 
+type Direction = "X" | "Y" | "Z";
+
 const DEFAULT_ESP_32_IP = "192.168.4.1";
 
 const MAX_END_EFFECTOR_X = 270;
@@ -163,9 +165,138 @@ function App() {
     signalConverterRef.current.onMove(event);
   };
 
-  const requestRef = useRef<number | null>(null);
+  const animationRequestRef = useRef<number | null>(null);
+  const animationStartTimeRef = useRef<number | null>(null);
+  const lastAnimationTimestampRef = useRef<number | null>(null);
+  const [isAnimating, setIsAnimating] = useState<boolean>(false);
+  const [animationSpeed, setAnimationSpeed] = useState<number>(5);
 
-  const approachDefaultPosition = () => {
+  const cancelAnimation = () => {
+    if (animationRequestRef.current) {
+      cancelAnimationFrame(animationRequestRef.current);
+    }
+
+    animationRequestRef.current = null;
+    animationStartTimeRef.current = null;
+    lastAnimationTimestampRef.current = null;
+    setIsAnimating(false);
+  };
+
+  const xDirectionRef = useRef<number>(1);
+  const yDirectionRef = useRef<number>(1);
+  const zDirectionRef = useRef<number>(1);
+
+  const handlePresetXY = (timestamp: number, directions: Direction[]) => {
+    if (!animationStartTimeRef.current) {
+      animationStartTimeRef.current = timestamp;
+    }
+
+    if (!lastAnimationTimestampRef.current) {
+      lastAnimationTimestampRef.current = timestamp;
+    }
+
+    const timeElapsed = timestamp - animationStartTimeRef.current;
+
+    if (timeElapsed >= 10000) {
+      cancelAnimation();
+      return;
+    }
+
+    const timeElapsedSinceLastUpdate =
+      timestamp - lastAnimationTimestampRef.current;
+
+    // Skip update
+    const waitTime = 100 / animationSpeed;
+
+    if (timeElapsedSinceLastUpdate < waitTime) {
+      animationRequestRef.current = requestAnimationFrame((timestamp) =>
+        handlePresetXY(timestamp, directions)
+      );
+      return;
+    }
+
+    lastAnimationTimestampRef.current = timestamp;
+
+    setEndEffectorPosition((prev) => {
+      const hasReachedMaxX = Math.abs(prev.x - MAX_END_EFFECTOR_X) <= 1;
+      if (hasReachedMaxX) {
+        xDirectionRef.current = -1;
+      }
+      const hasReachedMinX = Math.abs(prev.x - MIN_END_EFFECTOR_X) <= 1;
+      if (hasReachedMinX) {
+        xDirectionRef.current = 1;
+      }
+
+      const hasReachedMaxY = Math.abs(prev.y - MAX_END_EFFECTOR_Y) <= 1;
+      if (hasReachedMaxY) {
+        yDirectionRef.current = -1;
+      }
+      const hasReachedMinY = Math.abs(prev.y - MIN_END_EFFECTOR_Y) <= 1;
+      if (hasReachedMinY) {
+        yDirectionRef.current = 1;
+      }
+
+      const hasReachedMaxZ = Math.abs(prev.z - MAX_END_EFFECTOR_Z) <= 1;
+      if (hasReachedMaxZ) {
+        zDirectionRef.current = -1;
+      }
+      const hasReachedMinZ = Math.abs(prev.z - MIN_END_EFFECTOR_Z) <= 1;
+      if (hasReachedMinZ) {
+        zDirectionRef.current = 1;
+      }
+
+      const deltaX = xDirectionRef.current * 1;
+      const deltaY = yDirectionRef.current * 1;
+      const deltaZ = zDirectionRef.current * 1;
+
+      const newX = clamp(
+        prev.x + deltaX,
+        MIN_END_EFFECTOR_X,
+        MAX_END_EFFECTOR_X
+      );
+      const newY = clamp(
+        prev.y + deltaY,
+        MIN_END_EFFECTOR_Y,
+        MAX_END_EFFECTOR_Y
+      );
+      const newZ = clamp(
+        prev.z + deltaZ,
+        MIN_END_EFFECTOR_Z,
+        MAX_END_EFFECTOR_Z
+      );
+
+      animationRequestRef.current = requestAnimationFrame((timestamp) =>
+        handlePresetXY(timestamp, directions)
+      );
+
+      return {
+        x: directions.includes("X") ? newX : prev.x,
+        y: directions.includes("Y") ? newY : prev.y,
+        z: directions.includes("Z") ? newZ : prev.z,
+      };
+    });
+  };
+
+  const lastApproachDefaultPositionTimestampRef = useRef<number | null>(null);
+  const approachDefaultPosition = (timestamp: number) => {
+    if (!lastApproachDefaultPositionTimestampRef.current) {
+      lastApproachDefaultPositionTimestampRef.current = timestamp;
+    }
+
+    const timeElapsedSinceLastUpdate =
+      timestamp - lastApproachDefaultPositionTimestampRef.current;
+
+    // Skip update
+    const waitTime = 100 / animationSpeed;
+    if (timeElapsedSinceLastUpdate < waitTime) {
+      animationRequestRef.current = requestAnimationFrame(
+        approachDefaultPosition
+      );
+      return;
+    }
+
+    lastApproachDefaultPositionTimestampRef.current = timestamp;
+
     setEndEffectorPosition((prev) => {
       const deltaX = prev.x > INITIAL_END_EFFECTOR_POSITION.x ? -1 : 1;
       const deltaY = prev.y > INITIAL_END_EFFECTOR_POSITION.y ? -1 : 1;
@@ -197,13 +328,13 @@ function App() {
         Math.abs(newZ - INITIAL_END_EFFECTOR_POSITION.z) <= 1;
 
       if (hasReachedDefaultX && hasReachedDefaultY && hasReachedDefaultZ) {
-        if (requestRef.current) {
-          cancelAnimationFrame(requestRef.current);
-        }
+        cancelAnimation();
         return prev;
       }
 
-      requestRef.current = requestAnimationFrame(approachDefaultPosition);
+      animationRequestRef.current = requestAnimationFrame(
+        approachDefaultPosition
+      );
       return {
         x: hasReachedDefaultX ? INITIAL_END_EFFECTOR_POSITION.x : newX,
         y: hasReachedDefaultY ? INITIAL_END_EFFECTOR_POSITION.y : newY,
@@ -217,7 +348,9 @@ function App() {
   };
 
   const handleReset = () => {
-    requestRef.current = requestAnimationFrame(approachDefaultPosition);
+    animationRequestRef.current = requestAnimationFrame(
+      approachDefaultPosition
+    );
   };
 
   const handleSliderValueChange = (values: number[]) => {
@@ -256,6 +389,7 @@ function App() {
           <div className="flex flex-col justify-center items-center gap-4 min-w-60">
             <Label className="text-center">X,Y Positions</Label>
             <Joystick
+              disabled={isAnimating}
               size={100}
               sticky={false}
               baseColor="red"
@@ -281,7 +415,72 @@ function App() {
           </div>
         </div>
 
-        <Button onClick={handleReset}>Reset</Button>
+        <Separator />
+        <p>
+          Preset movements: <br />
+        </p>
+        <div className="flex w-full justify-between gap-2">
+          <Button
+            disabled={isAnimating}
+            onClick={() => {
+              setIsAnimating(true);
+              requestAnimationFrame((timestamp) =>
+                handlePresetXY(timestamp, ["X", "Y"])
+              );
+            }}
+          >
+            XY
+          </Button>
+          <Button
+            disabled={isAnimating}
+            onClick={() => {
+              setIsAnimating(true);
+              requestAnimationFrame((timestamp) =>
+                handlePresetXY(timestamp, ["X", "Z"])
+              );
+            }}
+          >
+            XZ
+          </Button>
+          <Button
+            disabled={isAnimating}
+            onClick={() => {
+              setIsAnimating(true);
+              requestAnimationFrame((timestamp) =>
+                handlePresetXY(timestamp, ["Y", "Z"])
+              );
+            }}
+          >
+            YZ
+          </Button>
+        </div>
+
+        <p>Reset to initial positions</p>
+        <Button
+          disabled={isAnimating}
+          onClick={() => {
+            setIsAnimating(false);
+            handleReset();
+          }}
+        >
+          Reset
+        </Button>
+
+        <div>
+          <Label>Speed: {animationSpeed}</Label>
+          <Input
+            disabled={isAnimating}
+            value={animationSpeed}
+            onChange={(e) => {
+              setAnimationSpeed(parseInt(e.target.value));
+            }}
+            className="p-0"
+            type="range"
+            min="1"
+            max="10"
+            step="1"
+          />
+        </div>
 
         <Separator />
 
@@ -303,6 +502,7 @@ function App() {
 
         <div className="flex flex-col gap-2">
           <NumberInput
+            disabled={isAnimating}
             id="end-effector-radius"
             label="End effector radius (r)"
             value={endEffectorRadius}
@@ -310,6 +510,7 @@ function App() {
           />
 
           <NumberInput
+            disabled={isAnimating}
             id="base-radius"
             label="Base radius (R)"
             value={baseRadius}
@@ -317,6 +518,7 @@ function App() {
           />
 
           <NumberInput
+            disabled={isAnimating}
             id="end-effector-to-mid-joint-length"
             label="End effector to mid joint length (l)"
             value={endEffectorToMidJointLength}
@@ -324,6 +526,7 @@ function App() {
           />
 
           <NumberInput
+            disabled={isAnimating}
             id="mid-joint-to-base-length"
             label="Mid joint to base length (L)"
             value={midJointToBaseLength}
@@ -336,6 +539,7 @@ function App() {
         <div>
           ESP32 AP IP:
           <Input
+            disabled={isAnimating}
             value={apIP}
             onChange={handleInputChange}
             placeholder="Enter ESP IP"
