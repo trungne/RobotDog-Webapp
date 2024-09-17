@@ -25,26 +25,44 @@ const MIN_END_EFFECTOR_Y = -270;
 const END_EFFECTOR_Y_STEP = 10;
 
 const MAX_END_EFFECTOR_Z = 530;
-const MIN_END_EFFECTOR_Z = 350;
-const END_EFFECTOR_Z_STEP = 10;
+const MIN_END_EFFECTOR_Z = 150;
+const END_EFFECTOR_Z_STEP = 2;
 
 const END_EFFECTOR_RADIUS = 45; // r
 const END_EFFECTOR_TO_MID_JOINT_LENGTH = 100; // l
-const MID_JOINT_TO_BASE_LENGTH = 446; // L
+const MID_JOINT_TO_BASE_LENGTH = 340; // L
 const BASE_RADIUS = 105 / 2; // R
 const INITIAL_END_EFFECTOR_POSITION = {
   x: 0,
   y: 0,
-  z: 432,
+  z: 323,
 } as const;
 
 const ANGLE_SEPARATOR = ",";
+
+const parseLastMessage = (lastMessage: string | null) => {
+  if (!lastMessage) {
+    return null;
+  }
+
+  const angles = lastMessage.split(ANGLE_SEPARATOR);
+
+  if (angles.length !== 3) {
+    return null;
+  }
+
+  return {
+    theta1: parseFloat(angles[0]),
+    theta2: parseFloat(angles[1]),
+    theta3: parseFloat(angles[2]),
+  };
+};
 class SignalConverter {
   private joystickState: IJoystickUpdateEvent | null = null;
 
   private setIntervalId: ReturnType<typeof setInterval> | null;
   private readonly signalRate: number;
-  private readonly handleJoystickUpdateEvent: (
+  private handleJoystickUpdateEvent: (
     joystickState: IJoystickUpdateEvent | null
   ) => void;
 
@@ -60,12 +78,13 @@ class SignalConverter {
     this.handleJoystickUpdateEvent = handleJoystickUpdateEvent;
   }
 
-  onStart() {
+  onStart(callback: (joystickState: IJoystickUpdateEvent | null) => void) {
     this.isPaused = false;
     this.setIntervalId = setInterval(() => {
       if (this.isPaused) {
         return;
       }
+      this.handleJoystickUpdateEvent = callback;
       this.handleJoystickUpdateEvent(this.joystickState);
     }, this.signalRate);
   }
@@ -92,6 +111,7 @@ function App() {
     MID_JOINT_TO_BASE_LENGTH
   ); // L
   const [baseRadius, setBaseRadius] = useState<number>(BASE_RADIUS); // R
+  const [isSendingAngles, setIsSendingAngles] = useState<boolean>(false);
 
   const [endEffectorPosition, setEndEffectorPosition] = useState<{
     x: number;
@@ -103,7 +123,11 @@ function App() {
 
   const socketUrl = `ws://${apIP}/ws`;
 
-  const { sendMessage, readyState } = useWebSocket(socketUrl);
+  const { sendMessage, readyState, lastMessage } = useWebSocket(socketUrl);
+
+  const actualAngles = useMemo(() => {
+    return parseLastMessage(lastMessage?.data);
+  }, [lastMessage]);
 
   const angles = useMemo(() => {
     return getAnglesFromPosition({
@@ -121,55 +145,73 @@ function App() {
     baseRadius,
   ]);
 
+  const onMoveJoyStick = (event: IJoystickUpdateEvent | null) => {
+    setEndEffectorPosition((prev) => {
+      if (!event) {
+        return prev;
+      }
+
+      if (!event.x || !event.y) {
+        return prev;
+      }
+
+      const xStep = END_EFFECTOR_X_STEP * (animationSpeed / 10);
+      const yStep = END_EFFECTOR_Y_STEP * (animationSpeed / 10);
+
+      const deltaX = xStep * event.x;
+      const deltaY = yStep * event.y;
+
+      const newX = Math.round(prev.x + deltaX);
+      const newY = Math.round(prev.y + deltaY);
+
+      return {
+        ...prev,
+        x: clamp(newX, MIN_END_EFFECTOR_X, MAX_END_EFFECTOR_X),
+        y: clamp(newY, MIN_END_EFFECTOR_Y, MAX_END_EFFECTOR_Y),
+      };
+    });
+  };
+
   const signalConverterRef = useRef<SignalConverter>(
-    new SignalConverter(100, (joystickState) => {
-      setEndEffectorPosition((prev) => {
-        if (!joystickState) {
-          return prev;
-        }
-
-        if (!joystickState.x || !joystickState.y) {
-          return prev;
-        }
-
-        const deltaX = END_EFFECTOR_X_STEP * joystickState.x;
-        const deltaY = END_EFFECTOR_Y_STEP * joystickState.y;
-
-        const newX = Math.round(prev.x + deltaX);
-        const newY = Math.round(prev.y + deltaY);
-
-        return {
-          ...prev,
-          x: clamp(newX, MIN_END_EFFECTOR_X, MAX_END_EFFECTOR_X),
-          y: clamp(newY, MIN_END_EFFECTOR_Y, MAX_END_EFFECTOR_Y),
-        };
-      });
-    })
+    new SignalConverter(100, onMoveJoyStick)
   );
 
   useEffect(() => {
-    if (!angles || !(readyState === ReadyState.OPEN)) {
+    if (!angles || !isSendingAngles) {
       return;
     }
+
+    console.log("Sending angles", angles);
 
     sendMessage(
       `${angles.theta1}${ANGLE_SEPARATOR}${angles.theta2}${ANGLE_SEPARATOR}${angles.theta3}`
     );
-  }, [angles, sendMessage, readyState]);
+  }, [angles, sendMessage, readyState, isSendingAngles]);
 
   const handleStart = () => {
-    signalConverterRef.current.onStart();
+    setIsSendingAngles(true);
+    signalConverterRef.current.onStart(onMoveJoyStick);
   };
 
   const handleMove = (event: IJoystickUpdateEvent) => {
     signalConverterRef.current.onMove(event);
   };
 
+  const handleStop = () => {
+    signalConverterRef.current.onStop();
+    setIsSendingAngles(false);
+  };
+
   const animationRequestRef = useRef<number | null>(null);
   const animationStartTimeRef = useRef<number | null>(null);
   const lastAnimationTimestampRef = useRef<number | null>(null);
   const [isAnimating, setIsAnimating] = useState<boolean>(false);
-  const [animationSpeed, setAnimationSpeed] = useState<number>(5);
+  const [animationSpeed, setAnimationSpeed] = useState<number>(5); // 1-10
+
+  const startAnimation = () => {
+    setIsAnimating(true);
+    setIsSendingAngles(true);
+  };
 
   const cancelAnimation = () => {
     if (animationRequestRef.current) {
@@ -180,13 +222,36 @@ function App() {
     animationStartTimeRef.current = null;
     lastAnimationTimestampRef.current = null;
     setIsAnimating(false);
+    setIsSendingAngles(false);
   };
 
   const xDirectionRef = useRef<number>(1);
-  const yDirectionRef = useRef<number>(1);
-  const zDirectionRef = useRef<number>(1);
+  const xBound = useRef<{
+    min: number;
+    max: number;
+  }>({
+    min: INITIAL_END_EFFECTOR_POSITION.x - 80,
+    max: INITIAL_END_EFFECTOR_POSITION.x + 80,
+  });
 
-  const handlePresetXY = (timestamp: number, directions: Direction[]) => {
+  const yDirectionRef = useRef<number>(1);
+  const yBound = useRef<{
+    min: number;
+    max: number;
+  }>({
+    min: INITIAL_END_EFFECTOR_POSITION.y - 80,
+    max: INITIAL_END_EFFECTOR_POSITION.y + 80,
+  });
+  const zDirectionRef = useRef<number>(1);
+  const zBound = useRef<{
+    min: number;
+    max: number;
+  }>({
+    min: INITIAL_END_EFFECTOR_POSITION.z - 80,
+    max: INITIAL_END_EFFECTOR_POSITION.z + 80,
+  });
+
+  const startPresetMovement = (timestamp: number, directions: Direction[]) => {
     if (!animationStartTimeRef.current) {
       animationStartTimeRef.current = timestamp;
     }
@@ -210,7 +275,7 @@ function App() {
 
     if (timeElapsedSinceLastUpdate < waitTime) {
       animationRequestRef.current = requestAnimationFrame((timestamp) =>
-        handlePresetXY(timestamp, directions)
+        startPresetMovement(timestamp, directions)
       );
       return;
     }
@@ -218,29 +283,29 @@ function App() {
     lastAnimationTimestampRef.current = timestamp;
 
     setEndEffectorPosition((prev) => {
-      const hasReachedMaxX = Math.abs(prev.x - MAX_END_EFFECTOR_X) <= 1;
+      const hasReachedMaxX = Math.abs(prev.x - xBound.current.max) <= 1;
       if (hasReachedMaxX) {
         xDirectionRef.current = -1;
       }
-      const hasReachedMinX = Math.abs(prev.x - MIN_END_EFFECTOR_X) <= 1;
+      const hasReachedMinX = Math.abs(prev.x - xBound.current.min) <= 1;
       if (hasReachedMinX) {
         xDirectionRef.current = 1;
       }
 
-      const hasReachedMaxY = Math.abs(prev.y - MAX_END_EFFECTOR_Y) <= 1;
+      const hasReachedMaxY = Math.abs(prev.y - yBound.current.max) <= 1;
       if (hasReachedMaxY) {
         yDirectionRef.current = -1;
       }
-      const hasReachedMinY = Math.abs(prev.y - MIN_END_EFFECTOR_Y) <= 1;
+      const hasReachedMinY = Math.abs(prev.y - yBound.current.min) <= 1;
       if (hasReachedMinY) {
         yDirectionRef.current = 1;
       }
 
-      const hasReachedMaxZ = Math.abs(prev.z - MAX_END_EFFECTOR_Z) <= 1;
+      const hasReachedMaxZ = Math.abs(prev.z - zBound.current.max) <= 1;
       if (hasReachedMaxZ) {
         zDirectionRef.current = -1;
       }
-      const hasReachedMinZ = Math.abs(prev.z - MIN_END_EFFECTOR_Z) <= 1;
+      const hasReachedMinZ = Math.abs(prev.z - zBound.current.min) <= 1;
       if (hasReachedMinZ) {
         zDirectionRef.current = 1;
       }
@@ -266,7 +331,7 @@ function App() {
       );
 
       animationRequestRef.current = requestAnimationFrame((timestamp) =>
-        handlePresetXY(timestamp, directions)
+        startPresetMovement(timestamp, directions)
       );
 
       return {
@@ -343,10 +408,6 @@ function App() {
     });
   };
 
-  const handleStop = () => {
-    signalConverterRef.current.onStop();
-  };
-
   const handleReset = () => {
     animationRequestRef.current = requestAnimationFrame(
       approachDefaultPosition
@@ -354,6 +415,7 @@ function App() {
   };
 
   const handleSliderValueChange = (values: number[]) => {
+    setIsSendingAngles(true);
     setEndEffectorPosition((prev) => {
       const value = values.at(0);
 
@@ -380,6 +442,27 @@ function App() {
     [ReadyState.UNINSTANTIATED]: "Uninstantiated",
   }[readyState];
 
+  const setXBound = (range: number) => {
+    xBound.current = {
+      min: Math.max(endEffectorPosition.x - range, MIN_END_EFFECTOR_X),
+      max: Math.min(endEffectorPosition.x + range, MAX_END_EFFECTOR_X),
+    };
+  };
+
+  const setYBound = (range: number) => {
+    yBound.current = {
+      min: Math.max(endEffectorPosition.y - range, MIN_END_EFFECTOR_Y),
+      max: Math.min(endEffectorPosition.y + range, MAX_END_EFFECTOR_Y),
+    };
+  };
+
+  const setZBound = (range: number) => {
+    zBound.current = {
+      min: Math.max(endEffectorPosition.z - range, MIN_END_EFFECTOR_Z),
+      max: Math.min(endEffectorPosition.z + range, MAX_END_EFFECTOR_Z),
+    };
+  };
+
   return (
     <main className="flex flex-col justify-center items-center h-full">
       <section className="max-w-[512px] flex flex-col gap-4 justify-center items-center">
@@ -404,6 +487,9 @@ function App() {
             <Label className="text-center">Z Position</Label>
 
             <Slider
+              onValueCommit={() => {
+                setIsSendingAngles(false);
+              }}
               id="z-controller"
               className="w-full"
               value={[endEffectorPosition.z]}
@@ -417,15 +503,18 @@ function App() {
 
         <Separator />
         <p>
-          Preset movements: <br />
+          Trajectory movements: <br />
         </p>
         <div className="flex w-full justify-between gap-2">
           <Button
             disabled={isAnimating}
             onClick={() => {
-              setIsAnimating(true);
+              setXBound(80);
+              setYBound(80);
+
+              startAnimation();
               requestAnimationFrame((timestamp) =>
-                handlePresetXY(timestamp, ["X", "Y"])
+                startPresetMovement(timestamp, ["X", "Y"])
               );
             }}
           >
@@ -434,9 +523,11 @@ function App() {
           <Button
             disabled={isAnimating}
             onClick={() => {
-              setIsAnimating(true);
+              setXBound(60);
+              setZBound(50);
+              startAnimation();
               requestAnimationFrame((timestamp) =>
-                handlePresetXY(timestamp, ["X", "Z"])
+                startPresetMovement(timestamp, ["X", "Z"])
               );
             }}
           >
@@ -445,9 +536,11 @@ function App() {
           <Button
             disabled={isAnimating}
             onClick={() => {
-              setIsAnimating(true);
+              setYBound(60);
+              setZBound(50);
+              startAnimation();
               requestAnimationFrame((timestamp) =>
-                handlePresetXY(timestamp, ["Y", "Z"])
+                startPresetMovement(timestamp, ["Y", "Z"])
               );
             }}
           >
@@ -459,7 +552,7 @@ function App() {
         <Button
           disabled={isAnimating}
           onClick={() => {
-            setIsAnimating(false);
+            startAnimation();
             handleReset();
           }}
         >
@@ -492,10 +585,17 @@ function App() {
         </div>
 
         <div className="flex flex-col gap-2 min-w-60">
-          <div>Angle:</div>
+          <div>Calculated Angles:</div>
           <div>Theta 1: {angles?.theta1}</div>
           <div>Theta 2: {angles?.theta2}</div>
           <div>Theta 3: {angles?.theta3}</div>
+        </div>
+
+        <div className="flex flex-col gap-2 min-w-60">
+          <div>Actual Angles:</div>
+          <div>Theta 1: {actualAngles?.theta1}</div>
+          <div>Theta 2: {actualAngles?.theta2}</div>
+          <div>Theta 3: {actualAngles?.theta3}</div>
         </div>
 
         <Separator />
